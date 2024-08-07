@@ -396,81 +396,57 @@ class InputFilter
             }
 
             /*
-             * Time to grab any attributes from the tag... need this section in
-             * case attributes have spaces in the values.
-             */
-            while ($currentSpace !== false) {
-                $attr        = '';
-                $fromSpace   = substr($tagLeft, ($currentSpace + 1));
-                $nextEqual   = strpos($fromSpace, '=');
-                $nextSpace   = strpos($fromSpace, ' ');
-                $openQuotes  = strpos($fromSpace, '"');
-                $closeQuotes = strpos(substr($fromSpace, ($openQuotes + 1)), '"') + $openQuotes + 1;
+			 * Time to grab any attributes from the tag... need this section in
+			 * case attributes have spaces in the values.
+			 */
+			while ($currentSpace !== false) {
+				$attr        = '';
+				$fromSpace   = substr($tagLeft, ($currentSpace + 1));
+				$nextEqual   = strpos($fromSpace, '=');
+				$nextSpace   = strpos($fromSpace, ' ');
 
-                $startAtt         = '';
-                $startAttPosition = 0;
+				if ($nextEqual === false || ($nextSpace !== false && $nextSpace < $nextEqual)) {
+					// Boolean attribute
+					if ($nextSpace === false) {
+						$attr = trim($fromSpace);
+						$fromSpace = '';
+					} else {
+						$attr = substr($fromSpace, 0, $nextSpace);
+						$fromSpace = substr($fromSpace, $nextSpace);
+					}					
+				} else {
+					// Attribute with value
+					$openQuotes  = strpos($fromSpace, '"');
+					$closeQuotes = strpos(substr($fromSpace, ($openQuotes + 1)), '"') + $openQuotes + 1;
 
-                // Find position of equal and open quotes ignoring
-                if (preg_match('#\s*=\s*\"#', $fromSpace, $matches, \PREG_OFFSET_CAPTURE)) {
-                    $stringBeforeAttr = substr($fromSpace, 0, $matches[0][1]);
-                    $startAttPosition = strlen($stringBeforeAttr);
-                    $startAtt         = $matches[0][0];
-                    $closeQuotePos    = strpos(
-                        substr($fromSpace, ($startAttPosition + strlen($startAtt))),
-                        '"'
-                    );
-                    $closeQuotes = $closeQuotePos + $startAttPosition + strlen($startAtt);
-                    $nextEqual   = $startAttPosition + strpos($startAtt, '=');
-                    $openQuotes  = $startAttPosition + strpos($startAtt, '"');
-                    $nextSpace   = strpos(substr($fromSpace, $closeQuotes), ' ') + $closeQuotes;
-                }
+					if (($openQuotes !== false)
+						&& (strpos(substr($fromSpace, ($openQuotes + 1)), '"') !== false)
+					) {
+						$attr = substr($fromSpace, 0, ($closeQuotes + 1));
+						$fromSpace = substr($fromSpace, $closeQuotes + 1);
+					} else {
+						if ($nextSpace === false) {
+							$attr = trim($fromSpace);
+							$fromSpace = '';
+						} else {
+							$attr = substr($fromSpace, 0, $nextSpace);
+							$fromSpace = substr($fromSpace, $nextSpace + 1);
+						}
+					}
+				}
 
-                // Do we have an attribute to process? [check for equal sign]
-                if ($fromSpace !== '/' && (($nextEqual && $nextSpace && $nextSpace < $nextEqual) || !$nextEqual)) {
-                    if (!$nextEqual) {
-                        $attribEnd = strpos($fromSpace, '/') - 1;
-                    } else {
-                        $attribEnd = $nextSpace - 1;
-                    }
+				if ($attr) {
+					$attrSet[] = $attr;
+				}
 
-                    // If there is an ending, use this, if not, do not worry.
-                    if ($attribEnd > 0) {
-                        $fromSpace = substr($fromSpace, $attribEnd + 1);
-                    }
-                }
+				$currentSpace = strpos($fromSpace, ' ');
 
-                if (strpos($fromSpace, '=') !== false) {
-                    /*
-                     * If the attribute value is wrapped in quotes we need to grab the substring from the closing quote,
-                     * otherwise grab until the next space.
-                     */
-                    if (
-                        ($openQuotes !== false)
-                        && (strpos(substr($fromSpace, ($openQuotes + 1)), '"') !== false)
-                    ) {
-                        $attr = substr($fromSpace, 0, ($closeQuotes + 1));
-                    } else {
-                        $attr = substr($fromSpace, 0, $nextSpace);
-                    }
-                } else {
-                    // No more equal signs so add any extra text in the tag into the attribute array [eg. checked]
-                    if ($fromSpace !== '/') {
-                        $attr = substr($fromSpace, 0, $nextSpace);
-                    }
-                }
+				if ($currentSpace === false && !empty(trim($fromSpace))) {
+					$attrSet[] = trim($fromSpace);
+				}
 
-                // Last Attribute Pair
-                if (!$attr && $fromSpace !== '/') {
-                    $attr = $fromSpace;
-                }
-
-                // Add attribute pair to the attribute array
-                $attrSet[] = $attr;
-
-                // Move search point and continue iteration
-                $tagLeft      = substr($fromSpace, strlen($attr));
-                $currentSpace = strpos($tagLeft, ' ');
-            }
+				$tagLeft = $fromSpace;
+			}
 
             // Is our tag in the user input array?
             $tagFound = \in_array(strtolower($tagName), $this->tagsArray);
