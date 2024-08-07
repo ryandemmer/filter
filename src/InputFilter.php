@@ -489,116 +489,120 @@ class InputFilter
     }
 
     /**
-     * Internal method to strip a tag of disallowed attributes
-     *
-     * @param   array  $attrSet  Array of attribute pairs to filter
-     *
-     * @return  array  Filtered array of attribute pairs
-     *
-     * @since   1.0
-     */
-    protected function cleanAttributes(array $attrSet)
-    {
-        $newSet = [];
+	 * Internal method to strip a tag of disallowed attributes
+	 *
+	 * @param   array  $attrSet  Array of attribute pairs to filter
+	 *
+	 * @return  array  Filtered array of attribute pairs
+	 *
+	 * @since   1.0
+	 */
+	protected function cleanAttributes(array $attrSet)
+	{
+		$newSet = [];
+		$count = \count($attrSet);
 
-        $count = \count($attrSet);
+		// Iterate through attribute pairs
+		for ($i = 0; $i < $count; $i++) {
+			// Skip blank spaces
+			if (!$attrSet[$i]) {
+				continue;
+			}
 
-        // Iterate through attribute pairs
-        for ($i = 0; $i < $count; $i++) {
-            // Skip blank spaces
-            if (!$attrSet[$i]) {
-                continue;
-            }
+			// Split into name/value pairs
+			$attrSubSet = explode('=', trim($attrSet[$i]), 2);
 
-            // Split into name/value pairs
-            $attrSubSet = explode('=', trim($attrSet[$i]), 2);
+			// Take the last attribute in case there is an attribute with no value
+			$attrSubSet0   = explode(' ', trim($attrSubSet[0]));
+			$attrSubSet[0] = array_pop($attrSubSet0);
 
-            // Take the last attribute in case there is an attribute with no value
-            $attrSubSet0   = explode(' ', trim($attrSubSet[0]));
-            $attrSubSet[0] = array_pop($attrSubSet0);
+			$attrSubSet[0] = strtolower($attrSubSet[0]);
+			$quoteStyle    = \ENT_QUOTES | \ENT_HTML401;
 
-            $attrSubSet[0] = strtolower($attrSubSet[0]);
-            $quoteStyle    = \ENT_QUOTES | \ENT_HTML401;
+			// Remove all spaces as valid attributes do not have spaces.
+			$attrSubSet[0] = html_entity_decode($attrSubSet[0], $quoteStyle, 'UTF-8');
+			$attrSubSet[0] = preg_replace('/^[\pZ\pC]+|[\pZ\pC]+$/u', '', $attrSubSet[0]);
+			$attrSubSet[0] = preg_replace('/\s+/u', '', $attrSubSet[0]);
 
-            // Remove all spaces as valid attributes does not have spaces.
-            $attrSubSet[0] = html_entity_decode($attrSubSet[0], $quoteStyle, 'UTF-8');
-            $attrSubSet[0] = preg_replace('/^[\pZ\pC]+|[\pZ\pC]+$/u', '', $attrSubSet[0]);
-            $attrSubSet[0] = preg_replace('/\s+/u', '', $attrSubSet[0]);
+			// Remove blocked chars from the attribute name
+			foreach ($this->blockedChars as $blockedChar) {
+				$attrSubSet[0] = str_ireplace($blockedChar, '', $attrSubSet[0]);
+			}
 
-            // Remove blocked chars from the attribute name
-            foreach ($this->blockedChars as $blockedChar) {
-                $attrSubSet[0] = str_ireplace($blockedChar, '', $attrSubSet[0]);
-            }
+			// Remove all symbols
+			$attrSubSet[0] = preg_replace('/[^\p{L}\p{N}\-\s]/u', '', $attrSubSet[0]);
 
-            // Remove all symbols
-            $attrSubSet[0] = preg_replace('/[^\p{L}\p{N}\-\s]/u', '', $attrSubSet[0]);
+			// Remove all "non-regular" attribute names
+			// AND blocked attributes
+			if ((!preg_match('/[a-z]*$/i', $attrSubSet[0]))
+				|| ($this->xssAuto && ((\in_array(strtolower($attrSubSet[0]), $this->blockedAttributes))
+					|| substr($attrSubSet[0], 0, 2) == 'on'))
+			) {
+				continue;
+			}
 
-            // Remove all "non-regular" attribute names
-            // AND blocked attributes
-            if (
-                (!preg_match('/[a-z]*$/i', $attrSubSet[0]))
-                || ($this->xssAuto && ((\in_array(strtolower($attrSubSet[0]), $this->blockedAttributes))
-                || substr($attrSubSet[0], 0, 2) == 'on'))
-            ) {
-                continue;
-            }
+			// Check if the attribute has a value
+			if (isset($attrSubSet[1])) {
+				// Remove blocked chars from the attribute value
+				foreach ($this->blockedChars as $blockedChar) {
+					$attrSubSet[1] = str_ireplace($blockedChar, '', $attrSubSet[1]);
+				}
 
-            // XSS attribute value filtering
-            if (!isset($attrSubSet[1])) {
-                continue;
-            }
+				// Trim leading and trailing spaces
+				$attrSubSet[1] = trim($attrSubSet[1]);
 
-            // Remove blocked chars from the attribute value
-            foreach ($this->blockedChars as $blockedChar) {
-                $attrSubSet[1] = str_ireplace($blockedChar, '', $attrSubSet[1]);
-            }
+				// Strips unicode, hex, etc
+				$attrSubSet[1] = str_replace('&#', '', $attrSubSet[1]);
 
-            // Trim leading and trailing spaces
-            $attrSubSet[1] = trim($attrSubSet[1]);
+				// Strip normal newline within attr value
+				$attrSubSet[1] = preg_replace('/[\n\r]/', '', $attrSubSet[1]);
 
-            // Strips unicode, hex, etc
-            $attrSubSet[1] = str_replace('&#', '', $attrSubSet[1]);
+				// Strip double quotes
+				$attrSubSet[1] = str_replace('"', '', $attrSubSet[1]);
 
-            // Strip normal newline within attr value
-            $attrSubSet[1] = preg_replace('/[\n\r]/', '', $attrSubSet[1]);
+				// Convert single quotes from either side to doubles (Single quotes shouldn't be used to pad attr values)
+				if ((substr($attrSubSet[1], 0, 1) == "'") && (substr($attrSubSet[1], (\strlen($attrSubSet[1]) - 1), 1) == "'")) {
+					$attrSubSet[1] = substr($attrSubSet[1], 1, (\strlen($attrSubSet[1]) - 2));
+				}
 
-            // Strip double quotes
-            $attrSubSet[1] = str_replace('"', '', $attrSubSet[1]);
+				// Strip slashes
+				$attrSubSet[1] = stripslashes($attrSubSet[1]);
 
-            // Convert single quotes from either side to doubles (Single quotes shouldn't be used to pad attr values)
-            if ((substr($attrSubSet[1], 0, 1) == "'") && (substr($attrSubSet[1], (\strlen($attrSubSet[1]) - 1), 1) == "'")) {
-                $attrSubSet[1] = substr($attrSubSet[1], 1, (\strlen($attrSubSet[1]) - 2));
-            }
+				// Autostrip script tags
+				if (static::checkAttribute($attrSubSet)) {
+					continue;
+				}
 
-            // Strip slashes
-            $attrSubSet[1] = stripslashes($attrSubSet[1]);
+				// Is our attribute in the user input array?
+				$attrFound = \in_array(strtolower($attrSubSet[0]), $this->attrArray);
 
-            // Autostrip script tags
-            if (static::checkAttribute($attrSubSet)) {
-                continue;
-            }
+				// If the tag is allowed lets keep it
+				if ((!$attrFound && $this->attrMethod) || ($attrFound && !$this->attrMethod)) {
+					// Does the attribute have a value?
+					if (empty($attrSubSet[1]) === false) {
+						$newSet[] = $attrSubSet[0] . '="' . $attrSubSet[1] . '"';
+					} elseif ($attrSubSet[1] === '0') {
+						// Special Case
+						// Is the value 0?
+						$newSet[] = $attrSubSet[0] . '="0"';
+					} else {
+						// Leave empty attributes alone
+						$newSet[] = $attrSubSet[0] . '=""';
+					}
+				}
+			} else {
+				// Handle boolean attributes
+				$attrFound = \in_array(strtolower($attrSubSet[0]), $this->attrArray);
 
-            // Is our attribute in the user input array?
-            $attrFound = \in_array(strtolower($attrSubSet[0]), $this->attrArray);
+				// If the tag is allowed lets keep it
+				if ((!$attrFound && $this->attrMethod) || ($attrFound && !$this->attrMethod)) {
+					$newSet[] = $attrSubSet[0];
+				}
+			}
+		}
 
-            // If the tag is allowed lets keep it
-            if ((!$attrFound && $this->attrMethod) || ($attrFound && !$this->attrMethod)) {
-                // Does the attribute have a value?
-                if (empty($attrSubSet[1]) === false) {
-                    $newSet[] = $attrSubSet[0] . '="' . $attrSubSet[1] . '"';
-                } elseif ($attrSubSet[1] === '0') {
-                    // Special Case
-                    // Is the value 0?
-                    $newSet[] = $attrSubSet[0] . '="0"';
-                } else {
-                    // Leave empty attributes alone
-                    $newSet[] = $attrSubSet[0] . '=""';
-                }
-            }
-        }
-
-        return $newSet;
-    }
+		return $newSet;
+	}
 
     /**
      * Try to convert to plaintext
