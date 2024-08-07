@@ -467,6 +467,8 @@ class InputFilter
                     if (strpos($fromTagOpen, '</' . $tagName)) {
                         $preTag .= '>';
                     } else {
+                        // ensure no additional spaces are added when rebuilding self-closing tag
+						$preTag  = rtrim($preTag);
                         $preTag .= ' />';
                     }
                 } else {
