@@ -1934,4 +1934,57 @@ class InputFilterTest extends TestCase
 
         $this->assertEquals($expected, $filter->clean($object));
     }
+
+    /**
+     * Tests for boolean attributes.
+     */
+    public function testBooleanAttributes()
+    {
+        $inputFilter = new InputFilter;
+
+        // Test boolean attributes in video tag
+        $input = '<video src="video.mp4" controls height="360" autoplay></video>';
+        $expected = '<video src="video.mp4" controls height="360" autoplay></video>';
+        $this->assertEquals($expected, $inputFilter->clean($input));
+
+        // Test boolean attribute at the end in video tag
+        $input = '<video src="video.mp4" height="360" autoplay controls></video>';
+        $expected = '<video src="video.mp4" height="360" autoplay controls></video>';
+        $this->assertEquals($expected, $inputFilter->clean($input));
+
+        // Test multiple boolean attributes in video tag
+        $input = '<video src="video.mp4" controls autoplay muted></video>';
+        $expected = '<video src="video.mp4" controls autoplay muted></video>';
+        $this->assertEquals($expected, $inputFilter->clean($input));
+
+        // Test boolean attributes in img tag
+        $input = '<img src="image.jpg" alt="description" hidden />';
+        $expected = '<img src="image.jpg" alt="description" hidden />';
+        $this->assertEquals($expected, $inputFilter->clean($input));
+
+        // Test boolean attribute at the end in img tag
+        $input = '<img src="image.jpg" alt="description" hidden />';
+        $expected = '<img src="image.jpg" alt="description" hidden />';
+        $this->assertEquals($expected, $inputFilter->clean($input));
+
+        // Test boolean attribute among other attributes in img tag
+        $input = '<img src="image.jpg" hidden alt="description" />';
+        $expected = '<img src="image.jpg" hidden alt="description" />';
+        $this->assertEquals($expected, $inputFilter->clean($input));
+
+        // Test boolean attributes in input tag
+        $input = '<input type="checkbox" checked disabled />';
+        $expected = '<input type="checkbox" checked disabled />';
+        $this->assertEquals($expected, $inputFilter->clean($input));
+
+        // Test boolean attribute at the end in input tag
+        $input = '<input type="checkbox" disabled checked />';
+        $expected = '<input type="checkbox" disabled checked />';
+        $this->assertEquals($expected, $inputFilter->clean($input));
+
+        // Test boolean attribute among other attributes in input tag
+        $input = '<input type="checkbox" checked />';
+        $expected = '<input type="checkbox" checked />';
+        $this->assertEquals($expected, $inputFilter->clean($input));
+    }
 }
