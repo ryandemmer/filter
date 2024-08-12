@@ -1940,7 +1940,7 @@ class InputFilterTest extends TestCase
      */
     public function testBooleanAttributes()
     {
-        $inputFilter = new InputFilter;
+        $inputFilter = new InputFilter(['video', 'img', 'input'], ['controls', 'autoplay', 'muted', 'hidden', 'checked', 'disabled', 'src', 'type', 'alt', 'height']);
 
         // Test boolean attributes in video tag
         $input = '<video src="video.mp4" controls height="360" autoplay></video>';
