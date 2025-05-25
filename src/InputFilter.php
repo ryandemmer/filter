@@ -154,6 +154,30 @@ class InputFilter
     ];
 
     /**
+     * List of standard HTML boolean attributes.
+     * These are allowed to appear without a value (e.g. <input disabled>).
+     * Presence alone implies a true value.
+     *
+     * Includes attributes for:
+     * - Forms (e.g. checked, disabled, readonly)
+     * - Media (e.g. autoplay, controls, muted)
+     * - Scripting (e.g. async, defer)
+     * - Structural (e.g. hidden, open)
+     * - Legacy/deprecated (e.g. compact, noresize)
+     */
+    private $booleanAttributes = [
+        // Common HTML5 boolean attributes
+        'allowfullscreen', 'async', 'autofocus', 'autoplay', 'checked',
+        'controls', 'default', 'defer', 'disabled', 'formnovalidate',
+        'hidden', 'inert', 'ismap', 'itemscope', 'loop', 'multiple',
+        'muted', 'nomodule', 'novalidate', 'open', 'readonly', 'required',
+        'reversed', 'selected', 'truespeed',
+
+        // Deprecated or legacy boolean attributes
+        'compact', 'declare', 'nohref', 'noresize', 'noshade', 'nowrap', 'scoped'
+    ];
+
+    /**
      * Constructor for InputFilter class.
      *
      * @param   array    $tagsArray   List of permitted HTML tags
@@ -307,187 +331,100 @@ class InputFilter
      */
     protected function cleanTags($source)
     {
-        // First, pre-process this for illegal characters inside attribute values
         $source = $this->escapeAttributeValues($source);
+        $preTag = '';
+        $postTag = $source;
+        $voidTags = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr'];
 
-        // In the beginning we don't really have a tag, so everything is postTag
-        $preTag       = null;
-        $postTag      = $source;
-        $currentSpace = false;
-
-        // Setting to null to deal with undefined variables
-        $attr = '';
-
-        // Is there a tag? If so it will certainly start with a '<'.
-        $tagOpenStart = strpos($source, '<');
-
-        while ($tagOpenStart !== false) {
-            // Get some information about the tag we are processing
+        while (($tagOpenStart = strpos($postTag, '<')) !== false) {
             $preTag .= substr($postTag, 0, $tagOpenStart);
-            $postTag     = substr($postTag, $tagOpenStart);
+            $postTag = substr($postTag, $tagOpenStart);
             $fromTagOpen = substr($postTag, 1);
-            $tagOpenEnd  = strpos($fromTagOpen, '>');
+            $tagOpenEnd = strpos($fromTagOpen, '>');
 
-            // Check for mal-formed tag where we have a second '<' before the first '>'
-            $nextOpenTag = (strlen($postTag) > $tagOpenStart) ? strpos($postTag, '<', $tagOpenStart + 1) : false;
-
-            if (($nextOpenTag !== false) && ($nextOpenTag < $tagOpenEnd)) {
-                // At this point we have a mal-formed tag -- remove the offending open
-                $postTag      = substr($postTag, 0, $tagOpenStart) . substr($postTag, $tagOpenStart + 1);
-                $tagOpenStart = strpos($postTag, '<');
-
-                continue;
-            }
-
-            // Let's catch any non-terminated tags and skip over them
             if ($tagOpenEnd === false) {
-                $postTag      = substr($postTag, $tagOpenStart + 1);
-                $tagOpenStart = strpos($postTag, '<');
-
-                continue;
+                $preTag .= $postTag;
+                break;
             }
 
-            // Do we have a nested tag?
-            $tagOpenNested = strpos($fromTagOpen, '<');
+            $currentTag = substr($fromTagOpen, 0, $tagOpenEnd);
+            $tagLength = strlen($currentTag);
+            $tagLeft = $currentTag;
+            $attrSet = [];
+            $currentSpace = strpos($tagLeft, ' ');
 
-            if (($tagOpenNested !== false) && ($tagOpenNested < $tagOpenEnd)) {
-                $preTag .= substr($postTag, 1, $tagOpenNested);
-                $postTag      = substr($postTag, ($tagOpenNested + 1));
-                $tagOpenStart = strpos($postTag, '<');
-
-                continue;
-            }
-
-            // Let's get some information about our tag and setup attribute pairs
-            $tagOpenNested = (strpos($fromTagOpen, '<') + $tagOpenStart + 1);
-            $currentTag    = substr($fromTagOpen, 0, $tagOpenEnd);
-            $tagLength     = strlen($currentTag);
-            $tagLeft       = $currentTag;
-            $attrSet       = [];
-            $currentSpace  = strpos($tagLeft, ' ');
-
-            // Are we an open tag or a close tag?
+            $isCloseTag = false;
             if (substr($currentTag, 0, 1) === '/') {
-                // Close Tag
-                $isCloseTag    = true;
-                list($tagName) = explode(' ', $currentTag);
-                $tagName       = substr($tagName, 1);
+                $isCloseTag = true;
+                $tagName = substr(explode(' ', $currentTag)[0], 1);
             } else {
-                // Open Tag
-                $isCloseTag    = false;
-                list($tagName) = explode(' ', $currentTag);
+                $tagName = explode(' ', $currentTag)[0];
             }
 
-            /*
-             * Exclude all "non-regular" tagnames
-             * OR no tagname
-             * OR remove if xssauto is on and tag is blocked
-             */
-            if (
-                (!preg_match('/^[a-z][a-z0-9]*$/i', $tagName))
-                || (!$tagName)
-                || ((\in_array(strtolower($tagName), $this->blockedTags)) && $this->xssAuto)
-            ) {
-                $postTag      = substr($postTag, ($tagLength + 2));
-                $tagOpenStart = strpos($postTag, '<');
-
-                // Strip tag
+            if (!preg_match('/^[a-z][a-z0-9]*$/i', $tagName) || (!$tagName) || ($this->xssAuto && in_array(strtolower($tagName), $this->blockedTags))) {
+                $postTag = substr($postTag, $tagLength + 2);
                 continue;
             }
 
-            /*
-			 * Time to grab any attributes from the tag... need this section in
-			 * case attributes have spaces in the values.
-			 */
-			while ($currentSpace !== false) {
-				$attr        = '';
-				$fromSpace   = substr($tagLeft, ($currentSpace + 1));
-				$nextEqual   = strpos($fromSpace, '=');
-				$nextSpace   = strpos($fromSpace, ' ');
+            while ($currentSpace !== false) {
+                $attr = '';
+                $fromSpace = substr($tagLeft, $currentSpace + 1);
+                $nextEqual = strpos($fromSpace, '=');
+                $nextSpace = strpos($fromSpace, ' ');
 
-				if ($nextEqual === false || ($nextSpace !== false && $nextSpace < $nextEqual)) {
-					// Boolean attribute
-					if ($nextSpace === false) {
-						$attr = trim($fromSpace);
-						$fromSpace = '';
-					} else {
-						$attr = substr($fromSpace, 0, $nextSpace);
-						$fromSpace = substr($fromSpace, $nextSpace);
-					}					
-				} else {
-					// Attribute with value
-					$openQuotes  = strpos($fromSpace, '"');
-					$closeQuotes = strpos(substr($fromSpace, ($openQuotes + 1)), '"') + $openQuotes + 1;
+                if ($nextEqual === false || ($nextSpace !== false && $nextSpace < $nextEqual)) {
+                    $attr = $nextSpace === false ? trim($fromSpace) : substr($fromSpace, 0, $nextSpace);
+                    $fromSpace = $nextSpace === false ? '' : substr($fromSpace, $nextSpace);
+                } else {
+                    $openQuotes = strpos($fromSpace, '"');
+                    $closeQuotes = strpos($fromSpace, '"', $openQuotes + 1);
 
-					if (($openQuotes !== false)
-						&& (strpos(substr($fromSpace, ($openQuotes + 1)), '"') !== false)
-					) {
-						$attr = substr($fromSpace, 0, ($closeQuotes + 1));
-						$fromSpace = substr($fromSpace, $closeQuotes + 1);
-					} else {
-						if ($nextSpace === false) {
-							$attr = trim($fromSpace);
-							$fromSpace = '';
-						} else {
-							$attr = substr($fromSpace, 0, $nextSpace);
-							$fromSpace = substr($fromSpace, $nextSpace + 1);
-						}
-					}
-				}
+                    if ($openQuotes !== false && $closeQuotes !== false) {
+                        $attr = substr($fromSpace, 0, $closeQuotes + 1);
+                        $fromSpace = substr($fromSpace, $closeQuotes + 1);
+                    } else {
+                        $attr = $nextSpace === false ? trim($fromSpace) : substr($fromSpace, 0, $nextSpace);
+                        $fromSpace = $nextSpace === false ? '' : substr($fromSpace, $nextSpace + 1);
+                    }
+                }
 
-				if ($attr) {
-					$attrSet[] = $attr;
-				}
+                if ($attr) {
+                    $attrSet[] = trim($attr);
+                }
 
-				$currentSpace = strpos($fromSpace, ' ');
+                $currentSpace = strpos($fromSpace, ' ');
+                if ($currentSpace === false && !empty(trim($fromSpace))) {
+                    $attrSet[] = trim($fromSpace);
+                }
 
-				if ($currentSpace === false && !empty(trim($fromSpace))) {
-					$attrSet[] = trim($fromSpace);
-				}
+                $tagLeft = $fromSpace;
+            }
 
-				$tagLeft = $fromSpace;
-			}
+            $tagFound = in_array(strtolower($tagName), $this->tagsArray);
 
-            // Is our tag in the user input array?
-            $tagFound = \in_array(strtolower($tagName), $this->tagsArray);
-
-            // If the tag is allowed let's append it to the output string.
             if ((!$tagFound && $this->tagsMethod) || ($tagFound && !$this->tagsMethod)) {
-                // Reconstruct tag with allowed attributes
                 if (!$isCloseTag) {
-                    // Open or single tag
                     $attrSet = $this->cleanAttributes($attrSet);
                     $preTag .= '<' . $tagName;
 
-                    for ($i = 0, $count = \count($attrSet); $i < $count; $i++) {
-                        $preTag .= ' ' . $attrSet[$i];
+                    foreach ($attrSet as $attr) {
+                        $preTag .= ' ' . $attr;
                     }
 
-                    // Reformat single tags to XHTML
-                    if (strpos($fromTagOpen, '</' . $tagName)) {
-                        $preTag .= '>';
+                    if (in_array($tagName, $voidTags, true)) {
+                        $preTag = rtrim($preTag) . ' />';
                     } else {
-                        // ensure no additional spaces are added when rebuilding self-closing tag
-						$preTag  = rtrim($preTag);
-                        $preTag .= ' />';
+                        $preTag .= '>';
                     }
                 } else {
-                    // Closing tag
                     $preTag .= '</' . $tagName . '>';
                 }
             }
 
-            // Find next tag's start and continue iteration
-            $postTag      = substr($postTag, ($tagLength + 2));
-            $tagOpenStart = strpos($postTag, '<');
+            $postTag = substr($postTag, $tagLength + 2);
         }
 
-        // Append any code after the end of tags and return
-        if ($postTag !== '<') {
-            $preTag .= $postTag;
-        }
-
-        return $preTag;
+        return $preTag . ($postTag !== '<' ? $postTag : '');
     }
 
     /**
@@ -500,111 +437,52 @@ class InputFilter
 	 * @since   1.0
 	 */
 	protected function cleanAttributes(array $attrSet)
-	{
-		$newSet = [];
-		$count = \count($attrSet);
+    {
+        $newSet = [];
 
-		// Iterate through attribute pairs
-		for ($i = 0; $i < $count; $i++) {
-			// Skip blank spaces
-			if (!$attrSet[$i]) {
-				continue;
-			}
+        foreach ($attrSet as $rawAttr) {
+            if (!$rawAttr) {
+                continue;
+            }
 
-			// Split into name/value pairs
-			$attrSubSet = explode('=', trim($attrSet[$i]), 2);
+            $rawAttr = preg_replace('/\s*=\s*/', '=', trim($rawAttr));
+            $attrSubSet = explode('=', $rawAttr, 2);
+            $name = strtolower(trim(html_entity_decode($attrSubSet[0], ENT_QUOTES, 'UTF-8')));
 
-			// Take the last attribute in case there is an attribute with no value
-			$attrSubSet0   = explode(' ', trim($attrSubSet[0]));
-			$attrSubSet[0] = array_pop($attrSubSet0);
+            if (!preg_match('/^[\p{L}\p{N}_:-]+$/u', $name)) {
+                continue;
+            }
 
-			$attrSubSet[0] = strtolower($attrSubSet[0]);
-			$quoteStyle    = \ENT_QUOTES | \ENT_HTML401;
+            if ($this->xssAuto && (in_array($name, $this->blockedAttributes) || strpos($name, 'on') === 0)) {
+                continue;
+            }
 
-			// Remove all spaces as valid attributes do not have spaces.
-			$attrSubSet[0] = html_entity_decode($attrSubSet[0], $quoteStyle, 'UTF-8');
-			$attrSubSet[0] = preg_replace('/^[\pZ\pC]+|[\pZ\pC]+$/u', '', $attrSubSet[0]);
-			$attrSubSet[0] = preg_replace('/\s+/u', '', $attrSubSet[0]);
+            $attrFound = in_array($name, $this->attrArray);
+            $allow = (!$attrFound && $this->attrMethod) || ($attrFound && !$this->attrMethod);
 
-			// Remove blocked chars from the attribute name
-			foreach ($this->blockedChars as $blockedChar) {
-				$attrSubSet[0] = str_ireplace($blockedChar, '', $attrSubSet[0]);
-			}
+            if (count($attrSubSet) === 2) {
+                $value = trim($attrSubSet[1], "\"'");
 
-			// Remove all symbols
-			$attrSubSet[0] = preg_replace('/[^\p{L}\p{N}\-\s]/u', '', $attrSubSet[0]);
+                if (!strlen($value)) {
+                    continue; // reject empty quoted value (not boolean)
+                }
 
-			// Remove all "non-regular" attribute names
-			// AND blocked attributes
-			if ((!preg_match('/[a-z]*$/i', $attrSubSet[0]))
-				|| ($this->xssAuto && ((\in_array(strtolower($attrSubSet[0]), $this->blockedAttributes))
-					|| substr($attrSubSet[0], 0, 2) == 'on'))
-			) {
-				continue;
-			}
+                $value = str_replace(['&#', "\n", "\r", '"'], '', stripslashes($value));
 
-			// Check if the attribute has a value
-			if (isset($attrSubSet[1])) {
-				// Remove blocked chars from the attribute value
-				foreach ($this->blockedChars as $blockedChar) {
-					$attrSubSet[1] = str_ireplace($blockedChar, '', $attrSubSet[1]);
-				}
+                if (static::checkAttribute([$name, $value])) {
+                    continue;
+                }
 
-				// Trim leading and trailing spaces
-				$attrSubSet[1] = trim($attrSubSet[1]);
+                if ($allow) {
+                    $newSet[] = $name . '="' . $value . '"';
+                }
+            } elseif ($allow && in_array($name, $this->booleanAttributes, true)) {
+                $newSet[] = $name;
+            }
+        }
 
-				// Strips unicode, hex, etc
-				$attrSubSet[1] = str_replace('&#', '', $attrSubSet[1]);
-
-				// Strip normal newline within attr value
-				$attrSubSet[1] = preg_replace('/[\n\r]/', '', $attrSubSet[1]);
-
-				// Strip double quotes
-				$attrSubSet[1] = str_replace('"', '', $attrSubSet[1]);
-
-				// Convert single quotes from either side to doubles (Single quotes shouldn't be used to pad attr values)
-				if ((substr($attrSubSet[1], 0, 1) == "'") && (substr($attrSubSet[1], (\strlen($attrSubSet[1]) - 1), 1) == "'")) {
-					$attrSubSet[1] = substr($attrSubSet[1], 1, (\strlen($attrSubSet[1]) - 2));
-				}
-
-				// Strip slashes
-				$attrSubSet[1] = stripslashes($attrSubSet[1]);
-
-				// Autostrip script tags
-				if (static::checkAttribute($attrSubSet)) {
-					continue;
-				}
-
-				// Is our attribute in the user input array?
-				$attrFound = \in_array(strtolower($attrSubSet[0]), $this->attrArray);
-
-				// If the tag is allowed lets keep it
-				if ((!$attrFound && $this->attrMethod) || ($attrFound && !$this->attrMethod)) {
-					// Does the attribute have a value?
-					if (empty($attrSubSet[1]) === false) {
-						$newSet[] = $attrSubSet[0] . '="' . $attrSubSet[1] . '"';
-					} elseif ($attrSubSet[1] === '0') {
-						// Special Case
-						// Is the value 0?
-						$newSet[] = $attrSubSet[0] . '="0"';
-					} else {
-						// Leave empty attributes alone
-						$newSet[] = $attrSubSet[0] . '=""';
-					}
-				}
-			} else {
-				// Handle boolean attributes
-				$attrFound = \in_array(strtolower($attrSubSet[0]), $this->attrArray);
-
-				// If the tag is allowed lets keep it
-				if ((!$attrFound && $this->attrMethod) || ($attrFound && !$this->attrMethod)) {
-					$newSet[] = $attrSubSet[0];
-				}
-			}
-		}
-
-		return $newSet;
-	}
+        return $newSet;
+    }
 
     /**
      * Try to convert to plaintext
