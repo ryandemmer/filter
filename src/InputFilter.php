@@ -331,28 +331,35 @@ class InputFilter
      */
     protected function cleanTags($source)
     {
+        // First, pre-process for illegal characters inside attribute values
         $source = $this->escapeAttributeValues($source);
         $preTag = '';
         $postTag = $source;
+
+        // HTML5 void (self-closing) elements
         $voidTags = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr'];
 
+        // Process each tag found in the source
         while (($tagOpenStart = StringHelper::strpos($postTag, '<')) !== false) {
             $preTag .= StringHelper::substr($postTag, 0, $tagOpenStart);
             $postTag = StringHelper::substr($postTag, $tagOpenStart);
             $fromTagOpen = StringHelper::substr($postTag, 1);
             $tagOpenEnd = StringHelper::strpos($fromTagOpen, '>');
 
+            // If no end bracket, treat as text
             if ($tagOpenEnd === false) {
                 $preTag .= $postTag;
                 break;
             }
 
+            // Extract tag content
             $currentTag = StringHelper::substr($fromTagOpen, 0, $tagOpenEnd);
             $tagLength = StringHelper::strlen($currentTag);
             $tagLeft = $currentTag;
             $attrSet = [];
             $currentSpace = StringHelper::strpos($tagLeft, ' ');
 
+            // Determine if it's a closing tag
             $isCloseTag = false;
             if (StringHelper::substr($currentTag, 0, 1) === '/') {
                 $isCloseTag = true;
@@ -361,21 +368,25 @@ class InputFilter
                 $tagName = explode(' ', $currentTag)[0];
             }
 
-            if (!preg_match('/^[a-z][a-z0-9]*$/i', $tagName) || (!$tagName) || ($this->xssAuto && in_array(strtolower($tagName), $this->blockedTags))) {
+            // Skip invalid or blocked tags
+            if (!preg_match('/^[a-z][a-z0-9]*$/i', $tagName) || !$tagName || ($this->xssAuto && in_array(strtolower($tagName), $this->blockedTags))) {
                 $postTag = StringHelper::substr($postTag, $tagLength + 2);
                 continue;
             }
 
+            // Extract attribute strings
             while ($currentSpace !== false) {
                 $attr = '';
                 $fromSpace = StringHelper::substr($tagLeft, $currentSpace + 1);
                 $nextEqual = StringHelper::strpos($fromSpace, '=');
                 $nextSpace = StringHelper::strpos($fromSpace, ' ');
 
+                // Handle unquoted boolean-style attribute (e.g. checked)
                 if ($nextEqual === false || ($nextSpace !== false && $nextSpace < $nextEqual)) {
                     $attr = $nextSpace === false ? trim($fromSpace) : StringHelper::substr($fromSpace, 0, $nextSpace);
                     $fromSpace = $nextSpace === false ? '' : StringHelper::substr($fromSpace, $nextSpace);
                 } else {
+                    // Handle quoted attribute values
                     $openQuotes = StringHelper::strpos($fromSpace, '"');
                     $closeQuotes = StringHelper::strpos($fromSpace, '"', $openQuotes + 1);
 
@@ -400,9 +411,11 @@ class InputFilter
                 $tagLeft = $fromSpace;
             }
 
+            // Check if tag is allowed
             $tagFound = in_array(strtolower($tagName), $this->tagsArray);
 
             if ((!$tagFound && $this->tagsMethod) || ($tagFound && !$this->tagsMethod)) {
+                // Open tag with attributes
                 if (!$isCloseTag) {
                     $attrSet = $this->cleanAttributes($attrSet);
                     $preTag .= '<' . $tagName;
@@ -411,12 +424,12 @@ class InputFilter
                         $preTag .= ' ' . $attr;
                     }
 
-                    if (in_array($tagName, $voidTags, true)) {
-                        $preTag = rtrim($preTag) . ' />';
-                    } else {
-                        $preTag .= '>';
-                    }
+                    // Use /> for void tags, otherwise close normally
+                    $preTag = in_array($tagName, $voidTags, true)
+                        ? rtrim($preTag) . ' />'
+                        : $preTag . '>';
                 } else {
+                    // Closing tag
                     $preTag .= '</' . $tagName . '>';
                 }
             }
@@ -428,43 +441,49 @@ class InputFilter
     }
 
     /**
-	 * Internal method to strip a tag of disallowed attributes
-	 *
-	 * @param   array  $attrSet  Array of attribute pairs to filter
-	 *
-	 * @return  array  Filtered array of attribute pairs
-	 *
-	 * @since   1.0
-	 */
-	protected function cleanAttributes(array $attrSet)
+     * Internal method to strip a tag of disallowed attributes
+     *
+     * @param   array  $attrSet  Array of attribute pairs to filter
+     *
+     * @return  array  Filtered array of attribute pairs
+     *
+     * @since   1.0
+     */
+    protected function cleanAttributes(array $attrSet)
     {
         $newSet = [];
 
+        // Iterate through attribute strings
         foreach ($attrSet as $rawAttr) {
             if (!$rawAttr) {
                 continue;
             }
 
+            // Normalize spacing around equals sign
             $rawAttr = preg_replace('/\s*=\s*/', '=', trim($rawAttr));
             $attrSubSet = explode('=', $rawAttr, 2);
             $name = strtolower(trim(html_entity_decode($attrSubSet[0], ENT_QUOTES, 'UTF-8')));
 
+            // Validate attribute name
             if (!preg_match('/^[\p{L}\p{N}_:-]+$/u', $name)) {
                 continue;
             }
 
-            if ($this->xssAuto && (in_array($name, $this->blockedAttributes) || StringHelper::strpos($name, 'on') === 0)) {
+            // Block dangerous attributes
+            if ($this->xssAuto && (in_array($name, $this->blockedAttributes) || strpos($name, 'on') === 0)) {
                 continue;
             }
 
+            // Check against allow/block list
             $attrFound = in_array($name, $this->attrArray);
             $allow = (!$attrFound && $this->attrMethod) || ($attrFound && !$this->attrMethod);
 
             if (count($attrSubSet) === 2) {
+                // Handle value-containing attributes
                 $value = trim($attrSubSet[1], "\"'");
 
-                if (!StringHelper::strlen($value)) {
-                    continue; // reject empty quoted value (not boolean)
+                if (!strlen($value)) {
+                    continue;
                 }
 
                 $value = str_replace(['&#', "\n", "\r", '"'], '', stripslashes($value));
@@ -477,6 +496,7 @@ class InputFilter
                     $newSet[] = $name . '="' . $value . '"';
                 }
             } elseif ($allow && in_array($name, $this->booleanAttributes, true)) {
+                // Handle boolean attributes (e.g. checked, autoplay)
                 $newSet[] = $name;
             }
         }
