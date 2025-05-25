@@ -336,55 +336,55 @@ class InputFilter
         $postTag = $source;
         $voidTags = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr'];
 
-        while (($tagOpenStart = strpos($postTag, '<')) !== false) {
-            $preTag .= substr($postTag, 0, $tagOpenStart);
-            $postTag = substr($postTag, $tagOpenStart);
-            $fromTagOpen = substr($postTag, 1);
-            $tagOpenEnd = strpos($fromTagOpen, '>');
+        while (($tagOpenStart = StringHelper::strpos($postTag, '<')) !== false) {
+            $preTag .= StringHelper::substr($postTag, 0, $tagOpenStart);
+            $postTag = StringHelper::substr($postTag, $tagOpenStart);
+            $fromTagOpen = StringHelper::substr($postTag, 1);
+            $tagOpenEnd = StringHelper::strpos($fromTagOpen, '>');
 
             if ($tagOpenEnd === false) {
                 $preTag .= $postTag;
                 break;
             }
 
-            $currentTag = substr($fromTagOpen, 0, $tagOpenEnd);
-            $tagLength = strlen($currentTag);
+            $currentTag = StringHelper::substr($fromTagOpen, 0, $tagOpenEnd);
+            $tagLength = StringHelper::strlen($currentTag);
             $tagLeft = $currentTag;
             $attrSet = [];
-            $currentSpace = strpos($tagLeft, ' ');
+            $currentSpace = StringHelper::strpos($tagLeft, ' ');
 
             $isCloseTag = false;
-            if (substr($currentTag, 0, 1) === '/') {
+            if (StringHelper::substr($currentTag, 0, 1) === '/') {
                 $isCloseTag = true;
-                $tagName = substr(explode(' ', $currentTag)[0], 1);
+                $tagName = StringHelper::substr(explode(' ', $currentTag)[0], 1);
             } else {
                 $tagName = explode(' ', $currentTag)[0];
             }
 
             if (!preg_match('/^[a-z][a-z0-9]*$/i', $tagName) || (!$tagName) || ($this->xssAuto && in_array(strtolower($tagName), $this->blockedTags))) {
-                $postTag = substr($postTag, $tagLength + 2);
+                $postTag = StringHelper::substr($postTag, $tagLength + 2);
                 continue;
             }
 
             while ($currentSpace !== false) {
                 $attr = '';
-                $fromSpace = substr($tagLeft, $currentSpace + 1);
-                $nextEqual = strpos($fromSpace, '=');
-                $nextSpace = strpos($fromSpace, ' ');
+                $fromSpace = StringHelper::substr($tagLeft, $currentSpace + 1);
+                $nextEqual = StringHelper::strpos($fromSpace, '=');
+                $nextSpace = StringHelper::strpos($fromSpace, ' ');
 
                 if ($nextEqual === false || ($nextSpace !== false && $nextSpace < $nextEqual)) {
-                    $attr = $nextSpace === false ? trim($fromSpace) : substr($fromSpace, 0, $nextSpace);
-                    $fromSpace = $nextSpace === false ? '' : substr($fromSpace, $nextSpace);
+                    $attr = $nextSpace === false ? trim($fromSpace) : StringHelper::substr($fromSpace, 0, $nextSpace);
+                    $fromSpace = $nextSpace === false ? '' : StringHelper::substr($fromSpace, $nextSpace);
                 } else {
-                    $openQuotes = strpos($fromSpace, '"');
-                    $closeQuotes = strpos($fromSpace, '"', $openQuotes + 1);
+                    $openQuotes = StringHelper::strpos($fromSpace, '"');
+                    $closeQuotes = StringHelper::strpos($fromSpace, '"', $openQuotes + 1);
 
                     if ($openQuotes !== false && $closeQuotes !== false) {
-                        $attr = substr($fromSpace, 0, $closeQuotes + 1);
-                        $fromSpace = substr($fromSpace, $closeQuotes + 1);
+                        $attr = StringHelper::substr($fromSpace, 0, $closeQuotes + 1);
+                        $fromSpace = StringHelper::substr($fromSpace, $closeQuotes + 1);
                     } else {
-                        $attr = $nextSpace === false ? trim($fromSpace) : substr($fromSpace, 0, $nextSpace);
-                        $fromSpace = $nextSpace === false ? '' : substr($fromSpace, $nextSpace + 1);
+                        $attr = $nextSpace === false ? trim($fromSpace) : StringHelper::substr($fromSpace, 0, $nextSpace);
+                        $fromSpace = $nextSpace === false ? '' : StringHelper::substr($fromSpace, $nextSpace + 1);
                     }
                 }
 
@@ -392,7 +392,7 @@ class InputFilter
                     $attrSet[] = trim($attr);
                 }
 
-                $currentSpace = strpos($fromSpace, ' ');
+                $currentSpace = StringHelper::strpos($fromSpace, ' ');
                 if ($currentSpace === false && !empty(trim($fromSpace))) {
                     $attrSet[] = trim($fromSpace);
                 }
@@ -421,7 +421,7 @@ class InputFilter
                 }
             }
 
-            $postTag = substr($postTag, $tagLength + 2);
+            $postTag = StringHelper::substr($postTag, $tagLength + 2);
         }
 
         return $preTag . ($postTag !== '<' ? $postTag : '');
@@ -453,7 +453,7 @@ class InputFilter
                 continue;
             }
 
-            if ($this->xssAuto && (in_array($name, $this->blockedAttributes) || strpos($name, 'on') === 0)) {
+            if ($this->xssAuto && (in_array($name, $this->blockedAttributes) || StringHelper::strpos($name, 'on') === 0)) {
                 continue;
             }
 
@@ -463,7 +463,7 @@ class InputFilter
             if (count($attrSubSet) === 2) {
                 $value = trim($attrSubSet[1], "\"'");
 
-                if (!strlen($value)) {
+                if (!StringHelper::strlen($value)) {
                     continue; // reject empty quoted value (not boolean)
                 }
 
